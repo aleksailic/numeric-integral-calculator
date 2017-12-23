@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Numeric Integral Calculator</title>
+    <script src="js/d3.v3.min.js"></script>
+    <script src="js/function-plot.js"></script>
+    <script src="js/Chart.min.js"></script>
+    <script src="js/math.min.js"></script>
+    <script src="js/app.js"></script>
+    <link rel="stylesheet" href="css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="css/bootstrap-theme.min.css"/>
+    <link rel="stylesheet" href="css/reset.css" />
+    <link rel="stylesheet" href="css/style.css"/>
+    <script src="js/dat.gui.min.js"></script>
+</head>
+<body>
+    <a href="https://github.com/aleksailic"><img style="position: absolute; top: 0; left: 0; border: 0;" src="https://camo.githubusercontent.com/567c3a48d796e2fc06ea80409cc9dd82bf714434/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f6c6566745f6461726b626c75655f3132313632312e706e67" alt="Fork me on GitHub" data-canonical-src="https://s3.amazonaws.com/github/ribbons/forkme_left_darkblue_121621.png"></a>
+    <div id="title">Numerical Integral Calculator</div>
+
+    <div id="plot-container">
+        <div class="form-group">
+            <label for="fn">Function:</label>
+            <input type="text" class="form-control" id="fn">
+        </div>
+
+        <canvas id="plot"></canvas>
+    </div>
+
+</body>
+</html>
