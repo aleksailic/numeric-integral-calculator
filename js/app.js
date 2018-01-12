@@ -21,6 +21,12 @@ if (!Array.prototype.forEach) //polyfill for forEach
             k++;
         }
     };
+String.prototype.prepare=function(){ //better regex with (x\d+)|(y\d+) and easy dataset implementation should be done
+    let str=String(this); //force new object
+    for(let i=0;i<arguments.length;i++)
+        str = str.replace(/\?/,arguments[i]);
+    return str;
+};
 
 let app=(function(){
     let Plot=new function(){
@@ -51,8 +57,8 @@ let app=(function(){
             }]
         };
         this.integration={
-            types: {
-                TRAPEZNA: 'trapezna',
+            identifiers: {
+                TRAPEZNA:'trapezna',
                 SIMPSONOVA: 'simpsonova',
                 ROMBERGOVA: 'rombergova',
             },
@@ -92,12 +98,10 @@ let app=(function(){
             self.options.data=[{
                 fn:val
             }];
-            //self.options.title='y = '+val;
             removeIntegrationElements();
             self.update();
         };
         this.init=function(){
-            console.log('init');
             document.getElementById("plot").innerHTML="";
             removeIntegrationElements();
             setDomain();
@@ -109,7 +113,7 @@ let app=(function(){
         };
 
         this.integrate=function(type){
-            const TYPES=self.integration.types;
+            const TYPES=self.integration.identifiers;
             const FORMAT_PRECISION=5;
             removeIntegrationElements();
 
@@ -120,6 +124,7 @@ let app=(function(){
                     <th scope="col">#</th>
                     <th scope="col">Range</th>
                     <th scope="col">Value</th>
+                    <th scope="col">Lagrange</th>
                     <th scope="col">Error</th>
                 </tr>
                 </thead>
@@ -137,127 +142,143 @@ let app=(function(){
             const h=math.eval(`(${b}-${a})/${points}`);
 
             const fn = self.options.data[0].fn;
-            const derivative_order= (type==TYPES.TRAPEZNA) ? 2 : 4;
+            const derivative_order= (type===TYPES.TRAPEZNA) ? 2 : 4;
             const derivative = findDerivative(fn,derivative_order);
 
             let integralVal=0;
             let counter=1;
 
+            let generateXs=function(from,to,points){
+                let step = math.eval(`(${from}-${to})/points`);
+                let arr=[];
+                while(arr.length!==points){
+                    arr.push(from);
+                    from=math.add(from.step);
+                }
+                return arr;
+            };
+            let getLagrange = function(data){ // data = [ { x:5,y:24}, ... ]
+                const n=data.length-1;
+                let Ln;
+                for(let i=0;i<=n;i++){
+                    let atom='(?-?)';
+
+                    let li;
+                    for(let j=0;j<=n;j++){
+                        if(j===i)continue; //preskacemo i
+                        li = (li===undefined ? String("(") : li.concat('*'));
+                        li += `(x-${data[j].x})`;
+                    }
+                    li += ')/(';
+                    for(let j=0;j<=n;j++){
+                        if(j===i)continue; //preskacemo i
+                        li += (li.slice(-1)==='(' ? " " : '*');
+                        li += `(${data[i].x}-${data[j].x})`;
+                    }
+                    li += `)*${data[i].y}`;
+
+                    Ln = (Ln===undefined ? li : Ln.concat(`+${li}`));
+                }
+                return Ln;
+            };
+            let getDataSet = function(fn){
+                let data=[];
+                for(let i=1;i<arguments.length;i++){
+                    let obj={};
+                    obj.x = arguments[i];
+                    obj.y = math.eval(fn,{x:arguments[i]});
+                    data.push(obj);
+                }
+                return data;
+            };
+            let calcErrorBound = function(range){
+                let fksi;
+                let step = math.eval(`${h}/10`); //moja gruba aproksimacija
+                for(let j=range[0];j<range[1];j=math.add(j,step)){
+                    let val = math.eval(derivative.toString(),{x: j});
+                    fksi=fksi || val;
+                    if(val>fksi)
+                        fksi=val;
+                }
+                return fksi;
+            }; // range: [ from, to]
+            let formatError = function(error){
+                let formatted=math.format(error,{notation: 'exponential', precision: FORMAT_PRECISION});
+                return formatted;
+            };
+            let printStep = function(counter,range,val,lagrange,error){
+                table.innerHTML+=`
+                    <tr>
+                        <th scope="row">${counter}</th>
+                        <td>$$[${math.parse(math.format(range[0],FORMAT_PRECISION))}, ${math.format(range[1],FORMAT_PRECISION)}]$$</td>
+                        <td>$$${math.format(val,{notation: 'fixed', precision: FORMAT_PRECISION})}$$</td>
+                        <td>$$${math.parse(lagrange).toTex({parenthesis: 'auto'})}$$</td>
+                        <td>$$${math.parse(error).toTex()}$$</td>
+                    </tr>
+                `;
+            };
+            let drawHelpers=function(f,range){
+                self.options.data.push({
+                    fn:f,
+                    range: range,
+                    closed: true
+                });
+            };
+
             switch(type){
                 case TYPES.TRAPEZNA:
-                    for (let i=a;counter<=points;++counter,i=math.add(i,h)){
-                        let x1=i;
-                        let x2=math.add(i,h);
-                        let y1=math.eval(fn,{x:x1});
-                        let y2=math.eval(fn,{x:x2});
+                    for (let i=a;counter<=points;++counter,i=math.add(i,h)) {
+                        let x1 = i;
+                        let x2 = math.add(i, h);
+                        let range = [x1, x2];
 
-                        let f = `${y1}+((${y2}-${y1})/(${x2}-${x1}))*(x-${x1})`;
-                        let val=math.eval(`((${x2}-${x1})/2)*(${y2}+${y1})`);
+                        let data = getDataSet(fn, x1, x2);
+                        let f = getLagrange(data);
 
-                        integralVal=math.add(integralVal,val);
+                        let val = math.eval(`((${data[1].x}-${data[0].x})/2)*(${data[1].y}+${data[0].y})`);
+                        integralVal = math.add(integralVal, val);
 
-                        // --- error calculation ---
-                        let fksi;
-                        let step = math.eval(`${h}/10`);
-                        for(let j=i;j<math.add(i,h);j=math.add(j,step)){
-                            let val = math.eval(derivative.toString(),{x: j});
-                            fksi=fksi || val;
-                            if(val>fksi)
-                                fksi=val;
-                        }
+                        let fksi = calcErrorBound(range);
+                        let error = formatError(math.eval(`(-1/12)*${fksi}*(${data[1].x}-${data[0].x})^3`));
 
-                        let error = math.eval(`(-1/12)*${fksi}*(${x2}-${x1})^3`);
-                        let error_format=math.format(error,{notation: 'exponential', precision: FORMAT_PRECISION});
-                            error_format=error_format.replace(/e/,' 10^');
-                        // ---------------------------
-
-                        table.innerHTML+=`
-                            <tr>
-                                <th scope="row">${counter}</th>
-                                <td>[${math.format(x1,FORMAT_PRECISION)} ${math.format(x2,FORMAT_PRECISION)}]</td>
-                                <td>${math.format(val,{notation: 'fixed', precision: FORMAT_PRECISION})}</td>
-                                <td>${error_format}</td>
-                            </tr>
-                        `;
-
-                        //crtaj trapeze
-                        self.options.data.push({
-                            fn:f,
-                            range: [x1, x2],
-                            closed: true
-                        });
+                        printStep(counter, range, val, f,error);
+                        drawHelpers(f, range);
                     }
-                    self.update();
                     break;
                 case TYPES.SIMPSONOVA:
-                    for (let i=a;i<b;i+=h){
-                        let x0=i;
-                        let x1=math.eval(`${i}+${h}/2`);
-                        let x2=math.add(i,h);
+                    for (let i=a;counter<=points;++counter,i=math.add(i,h)){
+                        let x1=i;
+                        let x2=math.eval(`${i}+${h}/2`);
+                        let x3=math.add(i,h);
 
-                        let y0=math.eval(fn,{x:x0});
-                        let y1=math.eval(fn,{x:x1});
-                        let y2=math.eval(fn,{x:x2});
+                        let range=[x1,x3];
 
-                        //let f = `${y1}+((${y2}-${y1})/(${x2}-${x1}))*(x-${x1})`;
-                        let val=math.eval(`(${h}/3)*(${y0}+4*${y1}+${y2})`);
+                        let data = getDataSet(fn,x1,x2,x3);
+                        let f = getLagrange(data);
 
+                        let expr="(?/6)*(? + 4*? + ?)".prepare(h,data[0].y,data[1].y,data[2].y);
+                        let val=math.eval(expr);
                         integralVal=math.add(integralVal,val);
 
-                        let izvod=math.derivative(fn, 'x'); //prvi izvod\
-                        izvod=math.derivative(izvod.toString(),'x');
-                        izvod=math.derivative(izvod.toString(),'x');
-                        izvod=math.derivative(izvod.toString(),'x'); //cetvrti
+                        let fksi = calcErrorBound(range);
+                        let error = formatError(math.eval(`(1/90)*${fksi}*((${h}/2)^5)`));
 
-                        let fksi;
-                        let step = math.eval(`${h}/10`);
-                        for(let j=i;j<i+h;j+=step){
-                            let val = math.eval(izvod.toString(),{x: j});
-                            fksi=fksi || val;
-                            if(val>fksi)
-                                fksi=val;
-                        }
-
-                        let error = math.eval(`(1/90)*${fksi}*((${h}/2)^5)`);
-
-                        let error_format=math.format(error,{notation: 'exponential', precision: 5});
-                        error_format=error_format.replace(/e/,' 10^');
-
-                        table.innerHTML+=`
-                            <tr>
-                                <th scope="row">${counter}</th>
-                                <td>[${x1} ${x2}]</td>
-                                <td>${math.format(val,{notation: 'fixed', precision: 5})}</td>
-                                <td>${izvod}</td>
-                                <td>${error_format}</td>
-                            </tr>
-                        `;
-                        counter++;
+                        printStep(counter,range,val,f,error);
+                        drawHelpers(f,range);
                     }
-                    table.innerHTML+=`
-                        <tr>
-                            <th scope="row"></th>
-                            <td>[${a} ${b}]</td>
-                            <td>${math.format(integralVal,{notation: 'fixed', precision: 5})}</td>
-                            <td></td>
-                            <td></td>
-                        </tr>
-                    `;
-
-                    self.update();
                     break;
                 default:
                     console.log("Not yet implemented!");
                     break;
             }
-
+            MathJax.Hub.Queue(["Typeset",MathJax.Hub]);
+            self.update();
             //dodaj glavni rezultat u tabelu
             table.innerHTML+=`
                 <tr>
                     <th scope="row"></th>
-                    <td>[${a} ${b}]</td>
-                    <td>${math.format(integralVal,{notation: 'fixed', precision: 5})}</td>
-                    <td></td>
+                    <th>[${a} ${b}]</th>
+                    <th>${math.format(integralVal,{notation: 'fixed', precision: 5})}</th>
                 </tr>
             `;
         }
